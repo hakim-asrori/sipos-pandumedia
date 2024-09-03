@@ -2,6 +2,7 @@ package com.terasoft.epost
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
@@ -16,6 +17,7 @@ import android.webkit.WebViewClient
 import android.webkit.WebChromeClient
 import android.webkit.PermissionRequest
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.print.PrintAttributes
@@ -26,6 +28,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.app.ActivityCompat
+import com.google.gson.Gson
 import java.io.IOException
 import java.io.OutputStream
 import java.util.UUID
@@ -40,24 +43,48 @@ class MainActivity : AppCompatActivity() {
     private val uuid: UUID = UUID.fromString("00001101-0000-1000-8000-00805f9b34fb")
     private val handler = Handler(Looper.getMainLooper())
     private val reconnectDelay = 10000L
+    private var selectedDeviceAddress: String? = "DC:0D:51:2C:BD:B5"
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        requestPermissions()
+
+        setUpWebview()
+
+        if (bluetoothAdapter == null) {
+            Toast.makeText(this, "Bluetooth not supported", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        registerReceiver(bluetoothReceiver, IntentFilter(BluetoothDevice.ACTION_ACL_CONNECTED))
+    }
+
+    private fun requestPermissions() {
         if (ActivityCompat.checkSelfPermission(
                 this,
-                Manifest.permission.BLUETOOTH_CONNECT
+                android.Manifest.permission.BLUETOOTH_CONNECT
+            ) != PackageManager.PERMISSION_GRANTED ||
+            ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.CAMERA
+            ) != PackageManager.PERMISSION_GRANTED ||
+            ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_FINE_LOCATION
             ) != PackageManager.PERMISSION_GRANTED
         ) {
-            ActivityCompat.requestPermissions(this, arrayOf(android.Manifest.permission.BLUETOOTH), 1)
+            ActivityCompat.requestPermissions(this, arrayOf(
+                Manifest.permission.BLUETOOTH_CONNECT,
+                Manifest.permission.CAMERA,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ), 1)
         }
+    }
 
-        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, arrayOf(android.Manifest.permission.CAMERA), 1)
-        }
-
+    private fun setUpWebview() {
         webView = findViewById(R.id.webView)
         webView.webViewClient = WebViewClient()
         webView.addJavascriptInterface(WebAppInterface(this), "Android")
@@ -71,75 +98,76 @@ class MainActivity : AppCompatActivity() {
                 request?.grant(request.resources)
             }
         }
-
-        if (bluetoothAdapter == null) {
-            Toast.makeText(this, "Bluetooth not supported", Toast.LENGTH_SHORT).show()
-//            finish()
-        }
-
-        if (bluetoothAdapter!!.isEnabled) {
-//            attemptConnection()
-//            finish()
-        }
-
-        val filter = IntentFilter(BluetoothDevice.ACTION_ACL_CONNECTED)
-        registerReceiver(bluetoothReceiver, filter)
-    }
-
-//    private fun createWebPrintJob(webView: WebView) {
-//        val printManager = getSystemService(Context.PRINT_SERVICE) as PrintManager
-//        val printAdapter = webView.createPrintDocumentAdapter("MyDocument")
-//        val printJob = printManager.print(
-//            "Document",
-//            printAdapter,
-//            PrintAttributes.Builder().build()
-//        )
-//    }
-
-    private fun attemptConnection() {
-        handler.postDelayed({
-            connectToPrinter()
-        }, reconnectDelay)
     }
 
     private fun connectToPrinter() {
-        val device: BluetoothDevice? = bluetoothAdapter?.getRemoteDevice(printerMACAddress)
-
-        if (device == null) {
-            Toast.makeText(this, "Printer device not found", Toast.LENGTH_SHORT).show()
-            return
-        }
-
         if (ActivityCompat.checkSelfPermission(
                 this,
                 Manifest.permission.BLUETOOTH_CONNECT
             ) != PackageManager.PERMISSION_GRANTED
         ) {
-            ActivityCompat.requestPermissions(this, arrayOf(android.Manifest.permission.BLUETOOTH), 1)
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 1)
         }
 
         try {
-            bluetoothSocket = device?.createRfcommSocketToServiceRecord(uuid)
+            val savedPrinterAddress = getSavedPrinterAddress()
+            val device: BluetoothDevice? = bluetoothAdapter?.getRemoteDevice(savedPrinterAddress)
+            if (device == null) {
+                Toast.makeText(this, "Printer tidak ditemukan", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            bluetoothSocket = device.createRfcommSocketToServiceRecord(uuid)
             bluetoothSocket?.connect()
-            outputStream = bluetoothSocket?.outputStream
+
+            if (bluetoothSocket?.isConnected == true) {
+                outputStream = bluetoothSocket?.outputStream
+            } else {
+                throw IOException("Socket is not connected")
+            }
 
             if (outputStream == null) {
-                Toast.makeText(this, "Error connecting to printer 1", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Error connecting to printer: output stream is null", Toast.LENGTH_SHORT).show()
+                closeConnection()
+                return
             }
+
+            return
         } catch (e: IOException) {
             e.printStackTrace()
-
-//            Toast.makeText(this, "Error connecting to printer 2", Toast.LENGTH_SHORT).show()
-            Toast.makeText(this, "Printer Thermal tidak ditemukan", Toast.LENGTH_SHORT).show()
+            Log.e("cek1", e.message.toString())
+//            Toast.makeText(this, "Printer Thermal tidak ditemukan", Toast.LENGTH_SHORT).show()
+            closeConnection()
+            return
         }
     }
 
     private fun printData(data: String) {
         try {
+            if (outputStream == null) {
+                connectToPrinter()
+            }
+
             outputStream?.write(data.toByteArray())
+            return
         } catch (e: IOException) {
             e.printStackTrace()
+            Log.e("cek2", e.message.toString())
             Toast.makeText(this, "Printer Thermal tidak ditemukan", Toast.LENGTH_SHORT).show()
+            closeConnection()
+            return
+        }
+    }
+
+    private fun closeConnection() {
+        try {
+            outputStream?.close()
+            bluetoothSocket?.close()
+        } catch (e: IOException) {
+            e.printStackTrace()
+        } finally {
+            outputStream = null
+            bluetoothSocket = null
         }
     }
 
@@ -153,27 +181,109 @@ class MainActivity : AppCompatActivity() {
                 printData(data)
             }
         }
+
+        @JavascriptInterface
+        fun scanBluetoothDevices() {
+            runOnUiThread {
+                if (bluetoothAdapter?.isEnabled == true) {
+                    startDiscovery()
+                } else {
+                    Toast.makeText(context, "Bluetooth not enabled", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun selectBluetoothDevice(deviceAddress: String) {
+            selectedDeviceAddress = deviceAddress
+            val sharedPreferences = getSharedPreferences("PrinterPrefs", Context.MODE_PRIVATE)
+            val editor = sharedPreferences.edit()
+            editor.putString("printer_mac_address", deviceAddress)
+            editor.apply()
+            connectToPrinter()
+        }
+    }
+
+    private fun startDiscovery() {
+        if (ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.BLUETOOTH_SCAN
+            ) != PackageManager.PERMISSION_GRANTED ||
+            ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.BLUETOOTH_CONNECT
+            ) != PackageManager.PERMISSION_GRANTED ||
+            ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(
+                    Manifest.permission.BLUETOOTH_SCAN,
+                    Manifest.permission.BLUETOOTH_CONNECT,
+                    Manifest.permission.ACCESS_FINE_LOCATION
+                ),
+                1
+            )
+            return
+        }
+
+        val filter = IntentFilter(BluetoothDevice.ACTION_FOUND).apply {
+            addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED)
+        }
+        registerReceiver(bluetoothReceiver, filter)
+
+        bluetoothAdapter?.startDiscovery()
     }
 
     private val bluetoothReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (BluetoothDevice.ACTION_ACL_CONNECTED == intent.action) {
-                // Bluetooth device connected
-                val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
-                if (device != null && device.address == printerMACAddress) {
-                    connectToPrinter()
+            if (ActivityCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.BLUETOOTH_CONNECT
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                ActivityCompat.requestPermissions(context as Activity, arrayOf(android.Manifest.permission.BLUETOOTH_SCAN), 1)
+            }
+
+            when (intent.action) {
+                BluetoothDevice.ACTION_FOUND -> {
+                    val device: BluetoothDevice? = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+                    device?.let {
+                        val deviceInfo = mapOf("name" to it.name, "address" to it.address)
+                        val devicesJson = Gson().toJson(deviceInfo)
+                        runOnUiThread {
+                            webView.evaluateJavascript("javascript:displayDevices('$devicesJson')", null)
+                        }
+                    }
+                }
+                BluetoothAdapter.ACTION_DISCOVERY_FINISHED -> {
+                    runOnUiThread {
+                        webView.evaluateJavascript("javascript:discoveryFinished()", null)
+                    }
+                }
+                BluetoothDevice.ACTION_ACL_CONNECTED -> {
+                    val device: BluetoothDevice? = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+                    device?.let {
+                        if (it.address == printerMACAddress) {
+                            connectToPrinter()
+                        }
+                    }
                 }
             }
         }
     }
 
+    private fun getSavedPrinterAddress(): String? {
+        val sharedPreferences = getSharedPreferences("PrinterPrefs", Context.MODE_PRIVATE)
+        return sharedPreferences.getString("printer_mac_address", printerMACAddress)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
-        try {
-            outputStream?.close()
-            bluetoothSocket?.close()
-        } catch (e: IOException) {
-            e.printStackTrace()
-        }
+        closeConnection()
+        unregisterReceiver(bluetoothReceiver)
     }
 }
