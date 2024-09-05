@@ -38,7 +38,7 @@ class MainActivity : AppCompatActivity() {
     private val bluetoothAdapter: BluetoothAdapter? = BluetoothAdapter.getDefaultAdapter()
     private var bluetoothSocket: BluetoothSocket? = null
     private var outputStream: OutputStream? = null
-//    private val printerMACAddress = "86:67:7A:47:EE:44"
+    //    private val printerMACAddress = "86:67:7A:47:EE:44"
     private val printerMACAddress = "DC:0D:51:2C:BD:B5"
     private val uuid: UUID = UUID.fromString("00001101-0000-1000-8000-00805f9b34fb")
     private val handler = Handler(Looper.getMainLooper())
