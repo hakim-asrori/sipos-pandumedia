@@ -74,12 +74,17 @@ class MainActivity : AppCompatActivity() {
             ActivityCompat.checkSelfPermission(
                 this,
                 Manifest.permission.ACCESS_FINE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED ||
+            ActivityCompat.checkSelfPermission(
+                    this,
+            Manifest.permission.BLUETOOTH_SCAN
             ) != PackageManager.PERMISSION_GRANTED
         ) {
             ActivityCompat.requestPermissions(this, arrayOf(
                 Manifest.permission.BLUETOOTH_CONNECT,
                 Manifest.permission.CAMERA,
-                Manifest.permission.ACCESS_FINE_LOCATION
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.BLUETOOTH_SCAN
             ), 1)
         }
     }
@@ -113,6 +118,7 @@ class MainActivity : AppCompatActivity() {
             val savedPrinterAddress = getSavedPrinterAddress()
             val device: BluetoothDevice? = bluetoothAdapter?.getRemoteDevice(savedPrinterAddress)
             if (device == null) {
+                webView.evaluateJavascript("javascript:displayMessages('Printer tidak ditemukan!', 0)", null)
                 Toast.makeText(this, "Printer tidak ditemukan", Toast.LENGTH_SHORT).show()
                 return
             }
@@ -123,15 +129,18 @@ class MainActivity : AppCompatActivity() {
             if (bluetoothSocket?.isConnected == true) {
                 outputStream = bluetoothSocket?.outputStream
             } else {
+                webView.evaluateJavascript("javascript:displayMessages('Printer tidak ditemukan!', 0)", null)
                 throw IOException("Socket is not connected")
             }
 
             if (outputStream == null) {
-                Toast.makeText(this, "Error connecting to printer: output stream is null", Toast.LENGTH_SHORT).show()
+                webView.evaluateJavascript("javascript:displayMessages('Printer tidak ditemukan!', 0)", null)
+//                Toast.makeText(this, "Error connecting to printer: output stream is null", Toast.LENGTH_SHORT).show()
                 closeConnection()
                 return
             }
 
+            webView.evaluateJavascript("javascript:displayMessages('Printer berhasil terhubung', 1)", null)
             return
         } catch (e: IOException) {
             e.printStackTrace()
@@ -149,10 +158,12 @@ class MainActivity : AppCompatActivity() {
             }
 
             outputStream?.write(data.toByteArray())
+            webView.evaluateJavascript("javascript:displayMessages('Nota berhasil di cetak', 1)", null)
             return
         } catch (e: IOException) {
             e.printStackTrace()
             Log.e("cek2", e.message.toString())
+            webView.evaluateJavascript("javascript:displayMessages('Printer tidak ditemukan!', 0)", null)
             Toast.makeText(this, "Printer Thermal tidak ditemukan", Toast.LENGTH_SHORT).show()
             closeConnection()
             return
@@ -186,6 +197,7 @@ class MainActivity : AppCompatActivity() {
         fun scanBluetoothDevices() {
             runOnUiThread {
                 if (bluetoothAdapter?.isEnabled == true) {
+                    Log.e("cek", "Sudah sampe sini 0")
                     startDiscovery()
                 } else {
                     Toast.makeText(context, "Bluetooth not enabled", Toast.LENGTH_SHORT).show()
@@ -227,7 +239,8 @@ class MainActivity : AppCompatActivity() {
                 ),
                 1
             )
-            return
+            Log.e("cek", "Sudah sampe sini -1")
+//            return
         }
 
         val filter = IntentFilter(BluetoothDevice.ACTION_FOUND).apply {
@@ -236,6 +249,7 @@ class MainActivity : AppCompatActivity() {
         registerReceiver(bluetoothReceiver, filter)
 
         bluetoothAdapter?.startDiscovery()
+        Log.e("cek", "Sudah sampe sini 1")
     }
 
     private val bluetoothReceiver = object : BroadcastReceiver() {
@@ -247,11 +261,12 @@ class MainActivity : AppCompatActivity() {
             ) {
                 ActivityCompat.requestPermissions(context as Activity, arrayOf(android.Manifest.permission.BLUETOOTH_SCAN), 1)
             }
-
+            Log.e("cek", intent.action.toString())
             when (intent.action) {
                 BluetoothDevice.ACTION_FOUND -> {
                     val device: BluetoothDevice? = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
                     device?.let {
+                        Log.e("cek", "Sudah sampe sini 2")
                         val deviceInfo = mapOf("name" to it.name, "address" to it.address)
                         val devicesJson = Gson().toJson(deviceInfo)
                         runOnUiThread {
@@ -260,6 +275,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 BluetoothAdapter.ACTION_DISCOVERY_FINISHED -> {
+                    Log.e("cek", "Sudah sampe sini 3")
                     runOnUiThread {
                         webView.evaluateJavascript("javascript:discoveryFinished()", null)
                     }
@@ -277,6 +293,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun getSavedPrinterAddress(): String? {
+        Log.e("cek", "Sudah sampe sini 4")
         val sharedPreferences = getSharedPreferences("PrinterPrefs", Context.MODE_PRIVATE)
         return sharedPreferences.getString("printer_mac_address", printerMACAddress)
     }
