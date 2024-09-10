@@ -298,6 +298,14 @@ class MainActivity : AppCompatActivity() {
         return sharedPreferences.getString("printer_mac_address", printerMACAddress)
     }
 
+    override fun onBackPressed() {
+        if(webView.canGoBack()) {
+            webView.goBack()
+        } else {
+            super.onBackPressed()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         closeConnection()
