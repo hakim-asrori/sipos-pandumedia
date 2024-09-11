@@ -55,6 +55,7 @@ class MainActivity : AppCompatActivity() {
         setUpWebview()
 
         if (bluetoothAdapter == null) {
+            webView.evaluateJavascript("javascript:displayMessages('Device tidak support Bluetooth!', 0)", null)
             Toast.makeText(this, "Bluetooth not supported", Toast.LENGTH_SHORT).show()
             return
         }
@@ -200,6 +201,7 @@ class MainActivity : AppCompatActivity() {
                     Log.e("cek", "Sudah sampe sini 0")
                     startDiscovery()
                 } else {
+                    webView.evaluateJavascript("javascript:displayMessages('Bluetooth tidak aktif!', 0)", null)
                     Toast.makeText(context, "Bluetooth not enabled", Toast.LENGTH_SHORT).show()
                 }
             }
